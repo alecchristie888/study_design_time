@@ -706,62 +706,69 @@ print(cum_plot_country)
 
 ##################################################################################################
 ################################# Test differences in study design proportion between ############
-################################# developed and developing economies #############################
+################################# high vs low/middle income economies ############################
 ##################################################################################################
 
-#classify all european and north american countries as developed economies
-df_analysis_all_clean <- df_analysis_all_clean %>%
+# Load the income classification data from the Excel file
+income_data_raw <- readxl::read_xlsx("country_incomeclass.xlsx")
+
+# Reshape the data from wide to long format
+# This makes it suitable for joining with your study data
+income_data_long <- income_data_raw %>%
+  pivot_longer(
+    cols = -c(iso3c, name),
+    names_to = "year",
+    values_to = "income_category"
+  ) %>%
+  mutate(year = as.integer(year)) # Ensure the year is an integer for merging
+
+# Join the two data frames to add the income category, restrict to 1987-2024 when income data is available
+df_with_income <- df_analysis_all %>%
+  filter(year>=1987 & year <=2024) %>%
+  left_join(income_data_long, by = c("iso3c", "year"))
+
+#a small number of states/countries are missing income data
+df_with_income %>% filter(is.na(income_category) & !is.na(iso3c)) %>% distinct(iso3c,country,year)
+
+unique(df_with_income$income_category)
+#group into high vs low-middle income
+df_with_income <- df_with_income %>%
   mutate(
-    region = ifelse(continent == "Europe", "Developed economies", "Developing economies")
+    income_group = case_when(
+      income_category == "H" ~ "High income",
+      income_category %in% c("L", "LM", "UM") ~ "Low/Middle income",
+      TRUE ~ NA_character_ # Handles cases where income_category is NA or other values
+    )
   )
 
-#check these
-df_analysis_all_clean %>% 
-  filter(region=="Developing economies") %>% 
-  distinct(iso3c,country,continent)
-
-#now add in the other developed economies
-df_analysis_all_clean <- df_analysis_all_clean %>% 
-  mutate(region = ifelse(iso3c=="ISR"|iso3c=="AUS"|iso3c=="NZL"|iso3c=="JPN"|
-                           iso3c=="KOR"|
-                           iso3c=="CAN"|iso3c=="USA"|
-                           iso3c=="BMU"|
-                           iso3c=="GRL", "Developed economies", region))
-
-#check developed economies
-df_analysis_all_clean %>% 
-  filter(region=="Developed economies") %>% 
-  distinct(iso3c,country,continent)
-
-#check developing economies
-df_analysis_all_clean %>% 
-  filter(region=="Developing economies") %>% 
-  distinct(iso3c,country,continent)
+#check
+unique(df_with_income$income_group)
 
 # remove data without iso3c
-df_analysis_all_clean <- df_analysis_all_clean %>% filter(!is.na(iso3c))
-
+df_with_income <- df_with_income %>% filter(!is.na(income_group))
+unique(df_with_income$income_group)
+unique(df_with_income$iso3c)
 
 # --- Chi-Squared Analysis and Plot Preparation ---
 
-# Calculate observed counts of studies for each design in each region
-observed_counts <- df_analysis_all_clean %>%
-  count(study.design.grouped, region, name = "observed")
+# Calculate observed counts of studies for each design in each income_group
+observed_counts <- df_with_income %>%
+  count(study.design.grouped, income_group, name = "observed")
 
-# Calculate the overall proportion of studies in each region (the "bias")
-total_studies <- nrow(df_analysis_all_clean)
-region_proportions <- df_analysis_all_clean %>%
-  count(region) %>%
+# Calculate the overall proportion of studies in each income_group (the "bias")
+total_studies <- nrow(df_with_income)
+income_group_proportions <- df_with_income %>%
+  count(income_group) %>%
   mutate(prop = n / total_studies)
 
 # Calculate the total number of studies for each design
-design_totals <- df_analysis_all_clean %>%
+design_totals <- df_with_income %>%
   count(study.design.grouped, name = "design_total")
 
 # Join these together to calculate the expected counts
 expected_counts <- observed_counts %>%
   left_join(design_totals, by = "study.design.grouped") %>%
-  left_join(region_proportions, by = "region") %>%
+  left_join(income_group_proportions, by = "income_group") %>%
   mutate(expected = design_total * prop)
 
 # Calculate the difference (Residuals) and a standardized value (Pearson Residuals)
@@ -781,7 +788,7 @@ plot_data <- expected_counts %>%
 plot_data$study.design.grouped <- factor(plot_data$study.design.grouped, levels=c("After","BA","CI","BACI","Rand.exp."))
 
 # --- Create the Proportional Representation Plot ---
-proportional_plot <- ggplot(plot_data, aes(x = study.design.grouped, y = pearson_residual, fill = region)) +
+proportional_plot <- ggplot(plot_data, aes(x = study.design.grouped, y = pearson_residual, fill = income_group)) +
   geom_bar(stat = "identity", position = "dodge") +
   geom_hline(yintercept = 1.96, linetype = "dashed", linewidth=1, color = "cornflowerblue") +
   geom_hline(yintercept = -1.96, linetype = "dashed",linewidth=1, color = "darkorange") +
@@ -791,7 +798,7 @@ proportional_plot <- ggplot(plot_data, aes(x = study.design.grouped, y = pearson
   labs(
     x = "Study Design",
     y = "Standardized Residual (Observed - Expected)",
-    fill = "Region"
+    fill = "World Bank Economic\nIncome Group"
   ) +
   scale_fill_viridis_d(option = "A", begin=0.05, end=0.5) +
   theme_cowplot() +
@@ -807,11 +814,17 @@ proportional_plot <- ggplot(plot_data, aes(x = study.design.grouped, y = pearson
 print(proportional_plot)
 
 #combine with previous plot
-combined_plot <- cum_plot_country + proportional_plot + plot_layout(ncol=2, guides = 'collect') & theme(legend.position = 'bottom')
+combined_plot <- cum_plot_country + proportional_plot + 
+  plot_layout(ncol = 2, guides = 'collect') & 
+  theme(
+    legend.position = 'bottom',
+    legend.spacing.x = unit(2.0, 'cm') # Adjust this value for more/less space
+  )
+
 print(combined_plot)
 
-# Create a contingency table (matrix) of study designs versus region
-contingency_table <- table(df_analysis_all_clean$study.design.grouped, df_analysis_all_clean$region)
+# Create a contingency table (matrix) of study designs versus income_group
+contingency_table <- table(df_with_income$study.design.grouped, df_with_income$income_group)
 
 # Display the contingency table to see the raw counts
 print(contingency_table)
