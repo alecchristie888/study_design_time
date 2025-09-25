@@ -23,6 +23,7 @@ library(viridis)
 library(cowplot)
 library(marginaleffects)
 library(data.table)
+library(patchwork)
 
 # Load datasets
 df <- readxl::read_xlsx("CE_Database_Publication.xlsx")
@@ -380,7 +381,7 @@ model_spline <- brm(
 )
 
 #reload model if saved
-model_spline <- readRDS("model_nonlinear_time_publication.rds")
+#model_spline <- readRDS("model_nonlinear_time_publication.rds")
 summary(model_spline)
 
 
@@ -450,7 +451,7 @@ plot_model <- ggplot() +
   # aesthetics should use the same scale and have the same title.
   scale_color_viridis_d(name = "Study Design", option = "D") +
   scale_fill_viridis_d(name = "Study Design", option = "D") +
-  
+  scale_y_continuous(breaks=seq(0,0.7,0.1),limits=c(0,0.65))+
   guides(fill = "none") + # Turn off the fill legend to avoid duplication
   labs(
     x = "Year of publication",
@@ -504,7 +505,7 @@ plot_raw <-  ggplot() +  # Raw data points
   theme(axis.text.x=element_text(size=13))+
   scale_color_viridis_d(name = "Study Design", option = "D") +
   scale_fill_viridis_d(name = "Study Design", option = "D") +
-  
+  scale_y_continuous(breaks=seq(0,0.7,0.1),limits=c(0,0.65))+
   guides(fill = "none",color = "none") + # Turn off the fill legend to avoid duplication
   labs(
     x = "Year of publication (5 year bins)",
